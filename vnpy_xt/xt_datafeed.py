@@ -2,10 +2,7 @@ from datetime import datetime, timedelta, time
 from typing import Optional, Callable
 
 from pandas import DataFrame
-from xtquant import (
-    xtdata,
-    xtdatacenter as xtdc
-)
+from xtquant import xtdata
 from filelock import FileLock, Timeout
 
 from vnpy.trader.setting import SETTINGS
@@ -18,12 +15,18 @@ from vnpy.trader.datafeed import BaseDatafeed
 INTERVAL_VT2XT: dict[Interval, str] = {
     Interval.MINUTE: "1m",
     Interval.DAILY: "1d",
-    Interval.TICK: "tick"
+    Interval.TICK: "tick",
 }
 
 INTERVAL_ADJUSTMENT_MAP: dict[Interval, timedelta] = {
     Interval.MINUTE: timedelta(minutes=1),
-    Interval.DAILY: timedelta()         # 日线无需进行调整
+    Interval.DAILY: timedelta(),  # 日线无需进行调整
+}
+
+TIMEFORMT_ADJUSTMENT_MAP: dict[Interval, str] = {
+    Interval.DAILY: "%Y%m%d",
+    Interval.HOUR: "%Y$m%d%H",
+    Interval.MINUTE: "%Y%m%d%H%M%S",
 }
 
 EXCHANGE_VT2XT: dict[Exchange, str] = {
@@ -44,8 +47,8 @@ CHINA_TZ = ZoneInfo("Asia/Shanghai")
 class XtDatafeed(BaseDatafeed):
     """迅投研数据服务接口"""
 
-    lock_filename = "xt_lock"
-    lock_filepath = get_file_path(lock_filename)
+    # lock_filename = "xt_lock"
+    # lock_filepath = get_file_path(lock_filename)
 
     def __init__(self):
         """"""
@@ -63,9 +66,9 @@ class XtDatafeed(BaseDatafeed):
             return True
 
         try:
-            # 使用Token连接，无需启动客户端
-            if self.username != "client":
-                self.init_xtdc()
+            # # 使用Token连接，无需启动客户端
+            # if self.username != "client":
+            #     self.init_xtdc()
 
             # 尝试查询合约信息，确认连接成功
             xtdata.get_instrument_detail("000001.SZ")
@@ -76,34 +79,36 @@ class XtDatafeed(BaseDatafeed):
         self.inited = True
         return True
 
-    def get_lock(self) -> bool:
-        """获取文件锁，确保单例运行"""
-        self.lock = FileLock(self.lock_filepath)
+    # def get_lock(self) -> bool:
+    #     """获取文件锁，确保单例运行"""
+    #     self.lock = FileLock(self.lock_filepath)
 
-        try:
-            self.lock.acquire(timeout=1)
-            return True
-        except Timeout:
-            return False
+    #     try:
+    #         self.lock.acquire(timeout=1)
+    #         return True
+    #     except Timeout:
+    #         return False
 
-    def init_xtdc(self) -> None:
-        """初始化xtdc服务进程"""
-        if not self.get_lock():
-            return
+    # def init_xtdc(self) -> None:
+    #     """初始化xtdc服务进程"""
+    #     if not self.get_lock():
+    #         return
 
-        # 设置token
-        xtdc.set_token(self.password)
+    #     # 设置token
+    #     xtdc.set_token(self.password)
 
-        # 开启使用期货真实夜盘时间
-        xtdc.set_future_realtime_mode(True)
+    #     # 开启使用期货真实夜盘时间
+    #     xtdc.set_future_realtime_mode(True)
 
-        # 执行初始化，但不启动默认58609端口监听
-        xtdc.init(False)
+    #     # 执行初始化，但不启动默认58609端口监听
+    #     xtdc.init(False)
 
-        # 设置监听端口58620
-        xtdc.listen(port=58620)
+    #     # 设置监听端口58620
+    #     xtdc.listen(port=58620)
 
-    def query_bar_history(self, req: HistoryRequest, output: Callable = print) -> Optional[list[BarData]]:
+    def query_bar_history(
+        self, req: HistoryRequest, output: Callable = print
+    ) -> Optional[list[BarData]]:
         """查询K线数据"""
         history: list[BarData] = []
 
@@ -117,31 +122,42 @@ class XtDatafeed(BaseDatafeed):
             return history
 
         adjustment: timedelta = INTERVAL_ADJUSTMENT_MAP[req.interval]
-
+        timeformat = TIMEFORMT_ADJUSTMENT_MAP[req.interval]
         # 遍历解析
         auction_bar: BarData = None
 
         for tp in df.itertuples():
-            # 将迅投研时间戳（K线结束时点）转换为VeighNa时间戳（K线开始时点）
-            dt: datetime = datetime.fromtimestamp(tp.time / 1000)
+            # 将minqmt时间戳（K线结束时点）转换为VeighNa时间戳（K线开始时点）
+            # dt: datetime = datetime.fromtimestamp(tp.time / 1000)
+            dt: datetime = datetime.strptime(str(tp.Index), timeformat)
             dt = dt.replace(tzinfo=CHINA_TZ)
             dt = dt - adjustment
 
+
             # 日线，过滤尚未走完的当日数据
             if req.interval == Interval.DAILY:
-                incomplete_bar: bool = (
-                    dt.date() == datetime.now().date()
-                    and datetime.now().time() < time(hour=15)
+                incomplete_bar: (
+                    bool
+                ) = dt.date() == datetime.now().date() and datetime.now().time() < time(
+                    hour=15
                 )
                 if incomplete_bar:
                     continue
             # 分钟线，过滤盘前集合竞价数据（合并到开盘后第1根K线中）
             else:
                 if (
-                    req.exchange in (Exchange.SSE, Exchange.SZSE, Exchange.BSE, Exchange.CFFEX)
+                    req.exchange
+                    in (Exchange.SSE, Exchange.SZSE, Exchange.BSE, Exchange.CFFEX)
                     and dt.time() == time(hour=9, minute=29)
                 ) or (
-                    req.exchange in (Exchange.SHFE, Exchange.INE, Exchange.DCE, Exchange.CZCE, Exchange.GFEX)
+                    req.exchange
+                    in (
+                        Exchange.SHFE,
+                        Exchange.INE,
+                        Exchange.DCE,
+                        Exchange.CZCE,
+                        Exchange.GFEX,
+                    )
                     and dt.time() in (time(hour=8, minute=59), time(hour=20, minute=59))
                 ):
                     auction_bar = BarData(
@@ -151,7 +167,7 @@ class XtDatafeed(BaseDatafeed):
                         open_price=float(tp.open),
                         volume=float(tp.volume),
                         turnover=float(tp.amount),
-                        gateway_name="XT"
+                        gateway_name="XT",
                     )
                     continue
 
@@ -168,7 +184,7 @@ class XtDatafeed(BaseDatafeed):
                 high_price=float(tp.high),
                 low_price=float(tp.low),
                 close_price=float(tp.close),
-                gateway_name="XT"
+                gateway_name="XT",
             )
 
             # 合并集合竞价数据
@@ -182,7 +198,9 @@ class XtDatafeed(BaseDatafeed):
 
         return history
 
-    def query_tick_history(self, req: HistoryRequest, output: Callable = print) -> Optional[list[TickData]]:
+    def query_tick_history(
+        self, req: HistoryRequest, output: Callable = print
+    ) -> Optional[list[TickData]]:
         """查询Tick数据"""
         history: list[TickData] = []
 
@@ -274,7 +292,9 @@ def get_history_df(req: HistoryRequest, output: Callable = print) -> DataFrame:
         xt_symbol += "O"
 
     xtdata.download_history_data(xt_symbol, xt_interval, start, end)
-    data: dict = xtdata.get_local_data([], [xt_symbol], xt_interval, start, end, -1, "front_ratio", False)      # 默认等比前复权
+    data: dict = xtdata.get_local_data(
+        [], [xt_symbol], xt_interval, start, end, -1, "front_ratio", False
+    )  # 默认等比前复权
 
     df: DataFrame = data[xt_symbol]
     return df

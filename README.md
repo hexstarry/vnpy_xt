@@ -1,4 +1,5 @@
 # VeighNa框架的迅投研数据服务接口
+为了解决券商版QMT使用的python版本低于231101，fork此版本。
 
 <p align="center">
   <img src ="https://vnpy.oss-cn-shanghai.aliyuncs.com/vnpy-logo.png"/>
@@ -13,7 +14,7 @@
 
 ## 说明
 
-基于迅投XtQuant封装开发的实时行情和数据服务接口，支持以下中国金融市场的K线和Tick数据：
+基于国金XtQuant封装开发的实时行情和数据服务接口，支持以下中国金融市场的K线和Tick数据：
 
 * 股票、基金、债券、ETF期权：
   * SSE：上海证券交易所
@@ -31,14 +32,7 @@
 
 安装环境推荐基于3.9.0版本以上的【[**VeighNa Studio**](https://www.vnpy.com/)】。
 
-直接使用pip命令：
-
-```
-pip install vnpy_xt
-```
-
-
-或者下载解压后在cmd中运行：
+下载解压后在cmd中运行：
 
 ```
 pip install .
@@ -46,16 +40,15 @@ pip install .
 
 ## 使用
 
-迅投数据试用账号申请链接：[VeighNa社区专属14天试用权限](https://xuntou.net/#/signup?utm_source=vnpy)
 
-**Token连接**
 
-1. 连接前请先确保xtquant模块可以正常加载（在[投研知识库](http://docs.thinktrader.net/)下载xtquant的安装包，解压后放置xtquant包到自己使用的Python环境的site_packages文件夹下）。
-2. 登录[迅投研服务平台](https://xuntou.net/#/userInfo)，在【用户中心】-【个人设置】-【接口TOKEN】处获取Token。
-3. 在VeighNa Trader的【全局配置】处进行数据服务配置：
+**不需要Token连接**
+
+1. 连接前请先确保xtquant模块可以正常加载券商使用的xtquant的安装包，放置到自己使用的Python环境的site_packages文件夹下。
+2. 在VeighNa Trader的【全局配置】处进行数据服务配置：
     * datafeed.name：xt
-    * datafeed.username：token
-    * datafeed.password：填复制的Token
+    * datafeed.username：No need
+    * datafeed.password: No Need
 
 **客户端连接**
 

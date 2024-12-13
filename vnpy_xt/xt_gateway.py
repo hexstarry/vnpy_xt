@@ -156,9 +156,9 @@ class XtGateway(BaseGateway):
 
         self.md_api.connect(token, stock_active, futures_active, option_active)
 
-        self.trading = setting["仿真交易"] == "是"
+        self.trading = setting["仿真交易"] == "否"
         if self.trading:
-            path: str = setting["QMT路径"] + "\\userdata"
+            path: str = setting["QMT路径"]
 
             accountid: str = setting["资金账号"]
 

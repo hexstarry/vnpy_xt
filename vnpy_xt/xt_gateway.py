@@ -38,7 +38,7 @@ from vnpy.trader.object import (
     Offset,
 )
 from vnpy.trader.constant import Exchange, Product
-from vnpy.trader.utility import ZoneInfo, get_file_path, round_to
+from vnpy.trader.utility import ZoneInfo, get_file_path, round_to, load_json, save_json
 
 # 交易所映射
 EXCHANGE_VT2XT: dict[Exchange, str] = {
@@ -242,6 +242,7 @@ class XtMdApi:
 
         self.inited: bool = False
         self.subscribed: set = set()
+        self.filename: str = "subscribed_xt.json"
 
         self.token: str = ""
         self.stock_active: bool = False
@@ -329,7 +330,18 @@ class XtMdApi:
         self.inited = True
         self.gateway.write_log("行情接口连接成功")
         self.query_contracts()
-
+        self.load_subscribed()
+    
+    def load_subscribed(self) -> None:
+        """
+        加载订阅股票
+        """
+        self.subscribed = set(load_json(self.filename).keys())
+        for xt_symbol in self.subscribed:
+            xtdata.subscribe_quote(
+                stock_code=xt_symbol, period="tick", callback=self.onMarketData
+            )
+    
     def query_contracts(self) -> None:
         """查询合约信息"""
         if self.stock_active:
@@ -502,6 +514,8 @@ class XtMdApi:
                 stock_code=xt_symbol, period="tick", callback=self.onMarketData
             )
             self.subscribed.add(xt_symbol)
+            subscribed_dict = {key: None for key in self.subscribed}
+            save_json(self.filename, subscribed_dict)
 
     def close(self) -> None:
         """关闭连接"""

@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, time
-from typing import Optional, Callable
+from collections.abc import Callable
 
 from pandas import DataFrame
 from xtquant import xtdata
@@ -10,6 +10,8 @@ from vnpy.trader.constant import Exchange, Interval
 from vnpy.trader.object import BarData, TickData, HistoryRequest
 from vnpy.trader.utility import ZoneInfo, get_file_path
 from vnpy.trader.datafeed import BaseDatafeed
+
+from .xt_config import VIP_ADDRESS_LIST, LISTEN_PORT
 
 
 INTERVAL_VT2XT: dict[Interval, str] = {
@@ -50,13 +52,13 @@ class XtDatafeed(BaseDatafeed):
     # lock_filename = "xt_lock"
     # lock_filepath = get_file_path(lock_filename)
 
-    def __init__(self):
+    def __init__(self) -> None:
         """"""
         self.username: str = SETTINGS["datafeed.username"]
         self.password: str = SETTINGS["datafeed.password"]
         self.inited: bool = False
 
-        self.lock: FileLock = None
+        self.lock: FileLock | None = None
 
         xtdata.enable_hello = False
 
@@ -103,12 +105,10 @@ class XtDatafeed(BaseDatafeed):
     #     # 执行初始化，但不启动默认58609端口监听
     #     xtdc.init(False)
 
-    #     # 设置监听端口58620
-    #     xtdc.listen(port=58620)
+        # 设置监听端口
+        xtdc.listen(port=LISTEN_PORT)
 
-    def query_bar_history(
-        self, req: HistoryRequest, output: Callable = print
-    ) -> Optional[list[BarData]]:
+    def query_bar_history(self, req: HistoryRequest, output: Callable = print) -> list[BarData] | None:
         """查询K线数据"""
         history: list[BarData] = []
 
@@ -188,8 +188,10 @@ class XtDatafeed(BaseDatafeed):
             )
 
             # 合并集合竞价数据
-            if auction_bar:
+            if auction_bar and auction_bar.volume:
                 bar.open_price = auction_bar.open_price
+                bar.high_price = max(bar.high_price, auction_bar.open_price)
+                bar.low_price = min(bar.low_price, auction_bar.open_price)
                 bar.volume += auction_bar.volume
                 bar.turnover += auction_bar.turnover
                 auction_bar = None
@@ -198,9 +200,7 @@ class XtDatafeed(BaseDatafeed):
 
         return history
 
-    def query_tick_history(
-        self, req: HistoryRequest, output: Callable = print
-    ) -> Optional[list[TickData]]:
+    def query_tick_history(self, req: HistoryRequest, output: Callable = print) -> list[TickData] | None:
         """查询Tick数据"""
         history: list[TickData] = []
 
@@ -218,6 +218,11 @@ class XtDatafeed(BaseDatafeed):
             dt: datetime = datetime.fromtimestamp(tp.time / 1000)
             dt = dt.replace(tzinfo=CHINA_TZ)
 
+            bidPrice: list[float] = tp.bidPrice
+            askPrice: list[float] = tp.askPrice
+            bidVol: list[float] = tp.bidVol
+            askVol: list[float] = tp.askVol
+
             tick: TickData = TickData(
                 symbol=req.symbol,
                 exchange=req.exchange,
@@ -230,34 +235,34 @@ class XtDatafeed(BaseDatafeed):
                 low_price=float(tp.low),
                 last_price=float(tp.lastPrice),
                 pre_close=float(tp.lastClose),
-                bid_price_1=float(tp.bidPrice[0]),
-                ask_price_1=float(tp.askPrice[0]),
-                bid_volume_1=float(tp.bidVol[0]),
-                ask_volume_1=float(tp.askVol[0]),
+                bid_price_1=float(bidPrice[0]),
+                ask_price_1=float(askPrice[0]),
+                bid_volume_1=float(bidVol[0]),
+                ask_volume_1=float(askVol[0]),
                 gateway_name="XT",
             )
 
-            bid_price_2: float = float(tp.bidPrice[1])
+            bid_price_2: float = float(bidPrice[1])
             if bid_price_2:
                 tick.bid_price_2 = bid_price_2
-                tick.bid_price_3 = float(tp.bidPrice[2])
-                tick.bid_price_4 = float(tp.bidPrice[3])
-                tick.bid_price_5 = float(tp.bidPrice[4])
+                tick.bid_price_3 = float(bidPrice[2])
+                tick.bid_price_4 = float(bidPrice[3])
+                tick.bid_price_5 = float(bidPrice[4])
 
-                tick.ask_price_2 = float(tp.askPrice[1])
-                tick.ask_price_3 = float(tp.askPrice[2])
-                tick.ask_price_4 = float(tp.askPrice[3])
-                tick.ask_price_5 = float(tp.askPrice[4])
+                tick.ask_price_2 = float(askPrice[1])
+                tick.ask_price_3 = float(askPrice[2])
+                tick.ask_price_4 = float(askPrice[3])
+                tick.ask_price_5 = float(askPrice[4])
 
-                tick.bid_volume_2 = float(tp.bidVol[1])
-                tick.bid_volume_3 = float(tp.bidVol[2])
-                tick.bid_volume_4 = float(tp.bidVol[3])
-                tick.bid_volume_5 = float(tp.bidVol[4])
+                tick.bid_volume_2 = float(bidVol[1])
+                tick.bid_volume_3 = float(bidVol[2])
+                tick.bid_volume_4 = float(bidVol[3])
+                tick.bid_volume_5 = float(bidVol[4])
 
-                tick.ask_volume_2 = float(tp.askVol[1])
-                tick.ask_volume_3 = float(tp.askVol[2])
-                tick.ask_volume_4 = float(tp.askVol[3])
-                tick.ask_volume_5 = float(tp.askVol[4])
+                tick.ask_volume_2 = float(askVol[1])
+                tick.ask_volume_3 = float(askVol[2])
+                tick.ask_volume_4 = float(askVol[3])
+                tick.ask_volume_5 = float(askVol[4])
 
             history.append(tick)
 
@@ -268,25 +273,25 @@ def get_history_df(req: HistoryRequest, output: Callable = print) -> DataFrame:
     """获取历史数据DataFrame"""
     symbol: str = req.symbol
     exchange: Exchange = req.exchange
-    start: datetime = req.start
-    end: datetime = req.end
+    start_dt: datetime = req.start
+    end_dt: datetime = req.end
     interval: Interval = req.interval
 
     if not interval:
         interval = Interval.TICK
 
-    xt_interval: str = INTERVAL_VT2XT.get(interval, None)
+    xt_interval: str | None = INTERVAL_VT2XT.get(interval, None)
     if not xt_interval:
         output(f"迅投研查询历史数据失败：不支持的时间周期{interval.value}")
         return DataFrame()
 
     # 为了查询夜盘数据
-    end += timedelta(1)
+    end_dt += timedelta(1)
 
     # 从服务器下载获取
     xt_symbol: str = symbol + "." + EXCHANGE_VT2XT[exchange]
-    start: str = start.strftime("%Y%m%d%H%M%S")
-    end: str = end.strftime("%Y%m%d%H%M%S")
+    start: str = start_dt.strftime("%Y%m%d%H%M%S")
+    end: str = end_dt.strftime("%Y%m%d%H%M%S")
 
     if exchange in (Exchange.SSE, Exchange.SZSE) and len(symbol) > 6:
         xt_symbol += "O"

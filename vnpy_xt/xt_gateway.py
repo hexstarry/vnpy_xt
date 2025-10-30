@@ -119,12 +119,12 @@ class XtGateway(BaseGateway):
     default_name: str = "XT"
 
     default_setting: dict[str, Any] = {
-        "token": "",
         "股票市场": ["是", "否"],
+        "信用市场": ["是", "否"],
         "期货市场": ["是", "否"],
         "期权市场": ["是", "否"],
         "仿真交易": ["是", "否"],
-        "账号类型": ["股票", "股票期权"],
+        "账号类型": ["股票", "信用","股票期权"],
         "QMT路径": "",
         "资金账号": "",
     }
@@ -154,13 +154,14 @@ class XtGateway(BaseGateway):
 
     def _connect(self, setting: dict) -> None:
         """连接交易接口"""
-        token: str = setting["token"]
-
+        # token: str = setting["token"]
+        token: str = "deleted, no use."
         stock_active: bool = setting["股票市场"] == "是"
+        credit_active: bool = setting["信用市场"] == "是"
         futures_active: bool = setting["期货市场"] == "是"
         option_active: bool = setting["期权市场"] == "是"
 
-        self.md_api.connect(token, stock_active, futures_active, option_active)
+        self.md_api.connect(token, stock_active, credit_active, futures_active, option_active)
 
         self.trading = setting["仿真交易"] == "否"
         if self.trading:
@@ -170,6 +171,8 @@ class XtGateway(BaseGateway):
 
             if setting["账号类型"] == "股票":
                 account_type: str = "STOCK"
+            elif setting["账号类型"] == "信用":
+                account_type = "CREDIT"
             else:
                 account_type = "STOCK_OPTION"
 
@@ -328,13 +331,14 @@ class XtMdApi:
                 self.gateway.on_tick(tick)
 
     def connect(
-        self, token: str, stock_active: bool, futures_active: bool, option_active: bool
+        self, token: str, stock_active: bool, credit_active: bool, futures_active: bool, option_active: bool
     ) -> None:
         """连接"""
         self.gateway.write_log("开始启动行情服务，请稍等")
 
         self.token = token
         self.stock_active = stock_active
+        self.credit_active = credit_active
         self.futures_active = futures_active
         self.option_active = option_active
 
@@ -365,7 +369,7 @@ class XtMdApi:
     
     def query_contracts(self) -> None:
         """查询合约信息"""
-        if self.stock_active:
+        if self.stock_active or self.credit_active:
             self.query_stock_contracts()
 
         if self.futures_active:
@@ -707,7 +711,7 @@ class XtTdApi(XtQuantTraderCallback):
             return
 
         for xt_position in xt_positions:
-            if self.account_type == "STOCK":
+            if self.account_type in ["STOCK", "CREDIT"]:
                 direction: Direction = Direction.NET
             else:
                 direction = POSDIRECTION_XT2VT.get(xt_position.direction, "")
@@ -723,11 +727,11 @@ class XtTdApi(XtQuantTraderCallback):
                 name=symbol_contract_map[f"{symbol}.{EXCHANGE_XT2VT[xt_exchange].value}"].name,
                 direction=direction,
                 volume=xt_position.volume,
-                yd_volume=xt_position.can_use_volume,
                 frozen=xt_position.volume - xt_position.can_use_volume,
                 price=xt_position.open_price,
                 pnl=round(xt_position.market_value/xt_position.volume/xt_position.open_price - 1, 3),
-                gateway_name=self.gateway_name,
+                yd_volume=xt_position.can_use_volume,
+                gateway_name=self.gateway_name
             )
 
             self.gateway.on_position(position)

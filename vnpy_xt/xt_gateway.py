@@ -694,7 +694,23 @@ class XtTdApi(XtQuantTraderCallback):
         account.available = xt_asset.cash
 
         self.gateway.on_account(account)
-
+    
+    def on_query_credit_detail_async(self, xt_credit_details) -> None:
+        """信用信息异步查询回报"""
+        if not xt_credit_details:
+            return
+        xt_asset = xt_credit_details[0]
+        account: AccountData = AccountData(
+            accountid=xt_asset.account_id,
+            balance=xt_asset.m_dBalance,
+            frozen=xt_asset.frozen_cash,
+            margin_loan=xt_asset.m_dFinDealAvl,
+            assure_asset=xt_asset.m_dAssureAsset,
+            gateway_name=self.gateway_name,
+        )
+        account.available = xt_asset.m_dAvailable
+        self.gateway.on_account(account) 
+        
     def on_query_trades_async(self, xt_trades: list[XtTrade]) -> None:
         """成交信息异步查询回报"""
         if not xt_trades:
@@ -904,10 +920,16 @@ class XtTdApi(XtQuantTraderCallback):
             )
 
     def query_account(self) -> None:
-        """查询账户资金"""
-        if self.connected:
+        if self.account_type == "STOCK" and self.connected:
+            """查询账户资金"""
             self.xt_client.query_stock_asset_async(
                 self.xt_account, self.on_query_asset_async
+            )
+
+        if self.account_type == "CREDIT" and self.connected:
+            """查询信用账户资金"""
+            self.xt_client.query_credit_detail_async(
+                self.xt_account, self.on_query_credit_detail_async
             )
 
     def query_order(self) -> None:

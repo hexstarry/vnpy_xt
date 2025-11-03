@@ -78,8 +78,8 @@ STATUS_XT2VT: dict[str, Status] = {
 
 # 多空方向映射
 DIRECTION_VT2XT: dict[tuple, str] = {
-    (Direction.LONG, Offset.NONE): xtconstant.STOCK_BUY,
-    (Direction.SHORT, Offset.NONE): xtconstant.STOCK_SELL,
+    (Direction.LONG, Offset.NONE): xtconstant.CREDIT_FIN_BUY,
+    (Direction.SHORT, Offset.NONE): xtconstant.CREDIT_SELL,
     (Direction.LONG, Offset.OPEN): xtconstant.STOCK_OPTION_BUY_OPEN,
     (Direction.LONG, Offset.CLOSE): xtconstant.STOCK_OPTION_BUY_CLOSE,
     (Direction.SHORT, Offset.OPEN): xtconstant.STOCK_OPTION_SELL_OPEN,

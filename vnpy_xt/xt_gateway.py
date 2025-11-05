@@ -78,8 +78,10 @@ STATUS_XT2VT: dict[str, Status] = {
 
 # 多空方向映射
 DIRECTION_VT2XT: dict[tuple, str] = {
-    (Direction.LONG, Offset.NONE): xtconstant.CREDIT_FIN_BUY,
-    (Direction.SHORT, Offset.NONE): xtconstant.CREDIT_SELL,
+    (Direction.LONG, Offset.CREDIT_BUY): xtconstant.CREDIT_BUY,
+    (Direction.SHORT, Offset.CREDIT_SELL): xtconstant.CREDIT_SELL,
+    (Direction.LONG, Offset.CREDIT_FIN_BUY): xtconstant.CREDIT_FIN_BUY,
+    (Direction.SHORT, Offset.CREDIT_SLO_SELL): xtconstant.CREDIT_SLO_SELL,
     (Direction.LONG, Offset.OPEN): xtconstant.STOCK_OPTION_BUY_OPEN,
     (Direction.LONG, Offset.CLOSE): xtconstant.STOCK_OPTION_BUY_CLOSE,
     (Direction.SHORT, Offset.OPEN): xtconstant.STOCK_OPTION_SELL_OPEN,
@@ -832,6 +834,8 @@ class XtTdApi(XtQuantTraderCallback):
         self.gateway.write_log("交易推送订阅成功")
 
         # 初始化数据查询
+        datas: list = self.xt_client.query_credit_subjects(self.xt_account)
+        self.credit_stocks_ls: list = [k.instrument_id for k in datas]
         self.query_account()
         self.query_position()
         self.query_order()
@@ -868,16 +872,31 @@ class XtTdApi(XtQuantTraderCallback):
             self.gateway.write_log("委托失败，期权交易需要选择开平方向")
             return ""
 
+        if req.offset not in [Offset.CREDIT_BUY, Offset.CREDIT_SELL, Offset.CREDIT_FIN_BUY, Offset.CREDIT_SLO_SELL] and self.account_type == "CREDIT":
+            self.gateway.write_log("委托失败，信用交易需要选择担保品交易还是融资融券")
+            return ""
+
         stock_code: str = req.symbol + "." + EXCHANGE_VT2XT[req.exchange]
         if self.account_type == "STOCK_OPTION":
             stock_code += "O"
 
+        xt_direction: tuple = (req.direction, req.offset)   
         # 现货委托不考虑开平
-        if contract.product == Product.OPTION:
-            xt_direction: tuple = (req.direction, req.offset)
-        else:
-            xt_direction = (req.direction, Offset.NONE)
-
+        # if contract.product in [Product.OPTION, Product.CREDIT]:
+        #     xt_direction: tuple = (req.direction, req.offset)
+        # else:
+        #     xt_direction = (req.direction, Offset.NONE)
+        # order_type: str = DIRECTION_VT2XT[xt_direction]
+        
+        # if self.account_type == "CREDIT":
+        #     if req.direction == Direction.LONG:
+        #         if stock_code in self.credit_stocks_ls:
+        #             order_type = xtconstant.CREDIT_FIN_BUY
+        #         else:
+        #             order_type = xtconstant.CREDIT_BUY
+        #     else:
+        #         order_type = xtconstant.CREDIT_SELL
+               
         orderid: str = self.new_orderid()
 
         self.xt_client.order_stock_async(

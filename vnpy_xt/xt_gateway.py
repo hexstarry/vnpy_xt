@@ -965,6 +965,78 @@ class XtTdApi(XtQuantTraderCallback):
                 self.xt_account, self.on_query_trades_async
             )
 
+    def repay_cash(self, amount: float) -> str:
+        """
+        现金还款（直接还款）
+        
+        Args:
+            amount: 还款金额
+            
+        Returns:
+            order_id: 委托编号
+        """
+        if not self.connected:
+            self.gateway.write_log("交易接口未连接，无法执行现金还款")
+            return ""
+        
+        if self.account_type != "CREDIT":
+            self.gateway.write_log("只有信用账户才能执行现金还款")
+            return ""
+        
+        orderid: str = self.new_orderid()
+        
+        # 现金还款：stock_code为空，order_volume为还款金额
+        self.xt_client.order_stock_async(
+            account=self.xt_account,
+            stock_code="",
+            order_type=xtconstant.CREDIT_DIRECT_CASH_REPAY,  # 直接还款
+            order_volume=int(amount),
+            price_type=0,  # 现金还款不需要价格
+            price=0,
+            strategy_name="autorepay",
+            order_remark=orderid,
+        )
+        
+        self.gateway.write_log(f"发送现金还款委托 - 金额: {amount:.2f}")
+        return orderid
+
+    def repay_by_sell(self, stock_code: str, amount: float, price: float = 0) -> str:
+        """
+        卖券还款
+        
+        Args:
+            stock_code: 证券代码（如600000.SH）
+            amount: 卖出数量
+            price: 卖出价格，0表示市价
+            
+        Returns:
+            order_id: 委托编号
+        """
+        if not self.connected:
+            self.gateway.write_log("交易接口未连接，无法执行卖券还款")
+            return ""
+        
+        if self.account_type != "CREDIT":
+            self.gateway.write_log("只有信用账户才能执行卖券还款")
+            return ""
+        
+        orderid: str = self.new_orderid()
+        
+        # 卖券还款
+        self.xt_client.order_stock_async(
+            account=self.xt_account,
+            stock_code=stock_code,
+            order_type=xtconstant.CREDIT_SELL_SECU_REPAY,  # 卖券还款
+            order_volume=int(amount),
+            price_type=xtconstant.LATEST_PRICE if price <= 0 else xtconstant.FIX_PRICE,
+            price=price,
+            strategy_name="autorepay",
+            order_remark=orderid,
+        )
+        
+        self.gateway.write_log(f"发送卖券还款委托 - 证券: {stock_code}, 数量: {amount}")
+        return orderid
+
     def close(self) -> None:
         """关闭连接"""
         if self.inited:

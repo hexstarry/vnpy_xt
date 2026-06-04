@@ -226,15 +226,67 @@ class XtGateway(BaseGateway):
             self.td_api.close()
 
     def process_timer_event(self, event: Event) -> None:
-        """定时事件处理"""
-        self.count += 1
-        if self.count < 2:
-            return
-        self.count = 0
-
-        func = self.query_functions.pop(0)
-        func()
-        self.query_functions.append(func)
+        """
+        定时事件处理
+        
+        交易时间内：保持正常的周期性查询（账户、持仓）
+        非交易时间：取消周期性查询，仅在启动时执行一次
+        """
+        import datetime
+        
+        now = datetime.datetime.now()
+        current_time = now.time()
+        
+        # 定义交易时间段
+        # 上午：9:15-11:30
+        morning_start = datetime.time(9, 15)
+        morning_end = datetime.time(11, 30)
+        
+        # 下午：13:00-15:00
+        afternoon_start = datetime.time(13, 0)
+        afternoon_end = datetime.time(15, 0)
+        
+        # 判断是否在交易时间内
+        is_trading_hours = (
+            (morning_start <= current_time <= morning_end) or
+            (afternoon_start <= current_time <= afternoon_end)
+        )
+        
+        # 检查是否是周一到周五（排除周末）
+        is_weekday = now.weekday() < 5  # 0-4是周一到周五
+        
+        in_trading_time = is_trading_hours and is_weekday
+        
+        # 记录状态变化（仅在状态变化时记录）
+        if not hasattr(self, 'last_in_trading_time'):
+            self.last_in_trading_time = None
+            self.initial_query_done = False
+        
+        if self.last_in_trading_time != in_trading_time:
+            if in_trading_time:
+                self.write_log(f"进入交易时间，开始周期性查询 - {now.strftime('%Y-%m-%d %H:%M:%S')}")
+            else:
+                self.write_log(f"离开交易时间，暂停周期性查询 - {now.strftime('%Y-%m-%d %H:%M:%S')}")
+            self.last_in_trading_time = in_trading_time
+        
+        # 交易时间内：执行正常的周期性查询
+        if in_trading_time:
+            self.count += 1
+            if self.count < 2:
+                return
+            self.count = 0
+            
+            func = self.query_functions.pop(0)
+            func()
+            self.query_functions.append(func)
+        else:
+            # 非交易时间：仅在初始化时执行一次查询
+            if not self.initial_query_done:
+                # 执行所有查询一次
+                for func in self.query_functions:
+                    func()
+                self.initial_query_done = True
+                self.write_log(f"非交易时间初始化查询完成 - {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
     def init_query(self) -> None:
         """初始化查询任务"""

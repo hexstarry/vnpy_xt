@@ -983,22 +983,48 @@ class XtTdApi(XtQuantTraderCallback):
             self.gateway.write_log("只有信用账户才能执行现金还款")
             return ""
         
+        # 检查当前时间是否在交易时段内
+        import datetime
+        now = datetime.datetime.now()
+        # 交易时间：9:00-15:30
+        if not (datetime.time(9, 0) <= now.time() <= datetime.time(15, 30)):
+            self.gateway.write_log(f"现金还款失败：当前时间 {now.strftime('%H:%M:%S')} 不在交易时段内（9:00-15:30）")
+            return ""
+        
         orderid: str = self.new_orderid()
         
-        # 现金还款：stock_code为空，order_volume为还款金额
-        self.xt_client.order_stock_async(
-            account=self.xt_account,
-            stock_code="",
-            order_type=xtconstant.CREDIT_DIRECT_CASH_REPAY,  # 直接还款
-            order_volume=int(amount),
-            price_type=0,  # 现金还款不需要价格
-            price=0,
-            strategy_name="autorepay",
-            order_remark=orderid,
-        )
+        # 现金还款：使用特殊的股票代码格式
+        stock_code: str = "000000.SH"
         
-        self.gateway.write_log(f"发送现金还款委托 - 金额: {amount:.2f}")
-        return orderid
+        try:
+            result: int = self.xt_client.order_stock_async(
+                account=self.xt_account,
+                stock_code=stock_code,
+                order_type=xtconstant.CREDIT_DIRECT_CASH_REPAY,
+                order_volume=int(amount),
+                price_type=xtconstant.FIX_PRICE,
+                price=0,
+                strategy_name="autorepay",
+                order_remark=orderid,
+            )
+            
+            if result == 0:
+                self.gateway.write_log(f"发送现金还款委托成功 - 金额: {amount:.2f}, 委托号: {orderid}")
+                return orderid
+            else:
+                # 错误码说明：
+                # -61: 该功能禁止在目前系统状态下运行（可能是非交易时间、系统维护或权限问题）
+                error_messages = {
+                    -61: "该功能禁止在目前系统状态下运行（请检查是否在交易时间内、账户权限是否开通）",
+                    -1: "股票市场格式错误",
+                }
+                msg = error_messages.get(result, f"未知错误码: {result}")
+                self.gateway.write_log(f"发送现金还款委托失败 - 返回码: {result}, {msg}")
+                return ""
+                
+        except Exception as e:
+            self.gateway.write_log(f"现金还款委托异常: {str(e)}")
+            return ""
 
     def repay_by_sell(self, stock_code: str, amount: float, price: float = 0) -> str:
         """
